@@ -138,11 +138,11 @@ const styles = {
   addOptionBtn: { width: '100%', padding: '8px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '9999px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#475569', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' },
   addChildBtn: {
     position: 'absolute',
-    right: '-14px',
+    right: '-21px',
     top: '50%',
     transform: 'translateY(-50%)',
-    width: '28px',
-    height: '28px',
+    width: '42px',
+    height: '42px',
     borderRadius: '50%',
     backgroundColor: '#2563eb',
     color: '#fff',
@@ -152,7 +152,9 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-    zIndex: 10
+    zIndex: 10,
+    fontSize: '18px',
+    fontWeight: 'bold'
   },
   overlayBL: { position: 'fixed', bottom: '24px', left: '24px', display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 100, backgroundColor: '#fff', padding: '14px', borderRadius: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', alignItems: 'center' },
   overlayBR: { position: 'fixed', bottom: '24px', right: '24px', display: 'flex', gap: '12px', zIndex: 100, backgroundColor: '#fff', padding: '14px', borderRadius: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', alignItems: 'center' },
@@ -178,14 +180,14 @@ const styles = {
     alignItems: 'center',
     gap: '12px',
     zIndex: 100,
-    backgroundColor: '#fff',
-    padding: '10px 20px',
-    borderRadius: '9999px',
-    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.05)',
-    border: '1px solid #e2e8f0'
+    backgroundColor: 'transparent',
+    padding: '0px',
+    borderRadius: '0px',
+    boxShadow: 'none',
+    border: 'none'
   },
   sendBtn: {
-    padding: '8px 18px',
+    padding: '12px 24px',
     backgroundColor: '#094776',
     border: 'none',
     borderRadius: '9999px',
@@ -304,7 +306,29 @@ const QuestionNode = ({ id, data }) => {
 
   const deleteOption = (idx) => {
     const updatedOptions = data.options.filter((_, i) => i !== idx);
-    data.onNodeChange(id, { ...data, options: updatedOptions }, true);
+    let updatedLoops = [...(data.loopOptions || [false, false, false, false])];
+    
+    const wasSelected = updatedLoops[idx];
+    
+    // Filtramos la opción del array de bucles y reponemos un false al final
+    updatedLoops = updatedLoops.filter((_, i) => i !== idx);
+    updatedLoops.push(false);
+    
+    if (wasSelected) {
+      // Si la opción eliminada era la seleccionada, limpiamos todo y quitamos el enlace
+      updatedLoops = [false, false, false, false];
+      if (data.onToggleLoopEdge) {
+        data.onToggleLoopEdge(id, -1);
+      }
+    } else {
+      // Si se elimina una opción ANTES de la que está seleccionada, ajustamos la conexión
+      const oldActive = (data.loopOptions || []).findIndex(v => v);
+      if (oldActive > idx && data.onToggleLoopEdge) {
+        data.onToggleLoopEdge(id, oldActive - 1);
+      }
+    }
+    
+    data.onNodeChange(id, { ...data, options: updatedOptions, loopOptions: updatedLoops }, true);
   };
 
   const addOption = () => {
@@ -524,7 +548,17 @@ const QuestionNode = ({ id, data }) => {
           </div>
         )}
 
-        <label style={styles.nodeLabel}>Options</label>
+        {id !== 'node_root_primary' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+            <span style={{ width: '14px' }} />
+            <label style={{ ...styles.nodeLabel, marginBottom: 0, flex: 1, maxWidth: '180px' }}>Options</label>
+            <label style={{ ...styles.nodeLabel, marginBottom: 0, width: '24px', textAlign: 'center' }}>Retour</label>
+            <span style={{ width: '22px' }} />
+          </div>
+        ) : (
+          <label style={styles.nodeLabel}>Options</label>
+        )}
+
         {data.options && data.options.map((opt, idx) => (
           <div key={idx} style={styles.optionRow}>
             <span style={styles.dragHandle}>
@@ -555,7 +589,6 @@ const QuestionNode = ({ id, data }) => {
             {id !== 'node_root_primary' ? (
               <input 
                 type="radio"
-                name={`loop_${id}`}
                 checked={!!data.loopOptions?.[idx]}
                 style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#6bb884' }}
                 className="nodrag nowheel"
@@ -570,6 +603,11 @@ const QuestionNode = ({ id, data }) => {
                   }
                 }}
                 onChange={(e) => {
+                  const alertShown = localStorage.getItem('retour_alert_shown');
+                  if (!alertShown) {
+                    alert("Sélectionner cette case sert de bouton de retour, pour revenir à la question précédente.");
+                    localStorage.setItem('retour_alert_shown', 'true');
+                  }
                   const updatedLoops = [false, false, false, false];
                   updatedLoops[idx] = true;
                   data.onNodeChange(id, { ...data, loopOptions: updatedLoops }, false);
@@ -623,7 +661,6 @@ const EditableEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, mark
   
   const edgePath = `M ${sourceX} ${sourceY} Q ${ctrlX} ${ctrlY} ${targetX} ${targetY}`;
   
-  // Posición T a lo largo de la curva Bezier (restringe movimiento exclusivamente a lo largo de la línea)
   const t = data?.labelT !== undefined ? data.labelT : 0.5;
   const labelX = Math.pow(1 - t, 2) * sourceX + 2 * (1 - t) * t * ctrlX + Math.pow(t, 2) * targetX;
   const labelY = Math.pow(1 - t, 2) * sourceY + 2 * (1 - t) * t * ctrlY + Math.pow(t, 2) * targetY;
@@ -762,18 +799,19 @@ const MainFlow = () => {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   
   const [loading, setLoading] = useState(true);
+  const [vignette, setVignette] = useState(true);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [history, setHistory] = useState({ list: [], index: -1 });
   const [fullScreen, setFullScreen] = useState(false);
-  const [vignette, setVignette] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ show: false, nodeId: null });
   const [showSendModal, setShowSendModal] = useState(false);
   const [sendingState, setSendingState] = useState('idle'); 
+  const [fsVignetteKey, setFsVignetteKey] = useState(0);
   
-  const [username, setUsername] = useState('Jean Dupont');
+  const [username, setUsername] = useState(() => localStorage.getItem('flow_username') || 'Jean Dupont');
   const [isEditingName, setIsEditingName] = useState(false);
-  const [userLogo, setUserLogo] = useState(null);
+  const [userLogo, setUserLogo] = useState(() => localStorage.getItem('flow_userlogo') || null);
 
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -781,12 +819,22 @@ const MainFlow = () => {
   const rebindFunctionsRef = useRef({});
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 4000);
+    const timer = setTimeout(() => {
+      setLoading(false);
+      setVignette(false);
+    }, 5000);
     return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { edgesRef.current = edges; }, [edges]);
+
+  useEffect(() => {
+    if (nodes.length > 0) {
+      const dataToSave = { nodes, edges };
+      localStorage.setItem('flow_data', JSON.stringify(dataToSave));
+    }
+  }, [nodes, edges]);
 
   const takeSnapshot = useCallback((currentNodes, currentEdges) => {
     setHistory(prev => {
@@ -1038,7 +1086,8 @@ const MainFlow = () => {
     while (processQueue.length > 0) {
       const currentId = processQueue.shift();
       edgesRef.current.forEach(edge => {
-        if (edge.source === currentId && !nodesToRemove.has(edge.target)) {
+        // Excluimos explícitamente las conexiones tipo isLoop para no afectar al bloque madre
+        if (edge.source === currentId && !nodesToRemove.has(edge.target) && !edge.data?.isLoop) {
           nodesToRemove.add(edge.target);
           processQueue.push(edge.target);
         }
@@ -1060,14 +1109,17 @@ const MainFlow = () => {
 
   const handleLogoUpload = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setUserLogo(URL.createObjectURL(e.target.files[0]));
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setUserLogo(reader.result);
+        localStorage.setItem('flow_userlogo', reader.result);
+      };
+      reader.readAsDataURL(e.target.files[0]);
     }
   };
 
   const toggleFullScreen = () => {
-    setVignette(true);
-    setTimeout(() => setVignette(false), 950);
-
+    setFsVignetteKey(prev => prev + 1);
     if (!fullScreen) {
       document.documentElement.requestFullscreen?.();
       setFullScreen(true);
@@ -1082,12 +1134,13 @@ const MainFlow = () => {
   useEffect(() => {
     const handleFsChange = () => {
       setFullScreen(!!document.fullscreenElement);
+      setFsVignetteKey(prev => prev + 1);
     };
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
 
-  const handleSaveAllDataOnSubmit = () => {
+  const handleSaveAndSend = () => {
     const savedBlocksStructure = nodes.map(node => ({
       id: node.id,
       question: node.data.question,
@@ -1102,6 +1155,34 @@ const MainFlow = () => {
   };
 
   useEffect(() => {
+    const savedData = localStorage.getItem('flow_data');
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        if (parsed.nodes && parsed.edges) {
+          const loadedNodes = parsed.nodes.map(n => {
+            n.data.onNodeChange = handleNodeDataChange;
+            n.data.onAddChild = handleAddChildBlock;
+            n.data.onTriggerDelete = triggerDeleteModal;
+            n.data.onOptionTextChange = handleOptionTextChange;
+            n.data.onToggleLoopEdge = handleToggleLoopEdge;
+            return n;
+          });
+          const loadedEdges = parsed.edges.map(e => {
+            e.data.onEdgeLabelChange = handleEdgeLabelChange;
+            e.data.onEdgeDataChange = handleEdgeUpdateGeneric;
+            return e;
+          });
+          setNodes(loadedNodes);
+          setEdges(loadedEdges);
+          setHistory({ list: [{ nodes: JSON.parse(JSON.stringify(loadedNodes)), edges: JSON.parse(JSON.stringify(loadedEdges)) }], index: 0 });
+          return;
+        }
+      } catch (e) {
+        console.error("Error loading saved workflow:", e);
+      }
+    }
+
     const rootId = 'node_root_primary';
     const initialNodesArr = [
       {
@@ -1161,35 +1242,7 @@ const MainFlow = () => {
     setNodes(initialNodesArr);
     setEdges(initialEdgesArr);
     setHistory({ list: [{ nodes: JSON.parse(JSON.stringify(initialNodesArr)), edges: JSON.parse(JSON.stringify(initialEdgesArr)) }], index: 0 });
-  }, []);
-
-  if (loading) {
-    return (
-      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, color: '#fff' }}>
-        <style>{`
-          @keyframes floatNode {
-            0%, 100% { transform: translateY(0) scale(1); box-shadow: 0 10px 25px rgba(37, 99, 235, 0.4); }
-            50% { transform: translateY(-15px) scale(1.05); box-shadow: 0 25px 40px rgba(37, 99, 235, 0.6); }
-          }
-          @keyframes glowRotate {
-             0% { border-color: #2563eb; }
-             50% { border-color: #6bb884; }
-             100% { border-color: #2563eb; }
-          }
-        `}</style>
-        <div style={{ width: '110px', height: '110px', borderRadius: '50%', backgroundColor: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'floatNode 3s ease-in-out infinite, glowRotate 3s linear infinite', marginBottom: '28px', border: '3px solid #2563eb' }}>
-          <svg width="55" height="55" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
-        </div>
-        <p style={{ fontSize: '15px', fontWeight: '500', textAlign: 'center', maxWidth: '80%', lineHeight: '1.7', color: '#94a3b8', fontFamily: '"Inter", sans-serif' }}>
-          Connexion au réseau sécurisé de <span style={{ color: '#fff', fontWeight: '700' }}>smsmode© France</span>... <br />
-          Bienvenue sur l'ultime logiciel de messagerie Webflow RCS ! <br />
-          <span style={{ color: '#2563eb', fontWeight: '600' }}>Préparez-vous à propulser vos télécoms vers une autre dimension.</span>
-        </p>
-      </div>
-    );
-  }
+  }, [handleNodeDataChange, handleAddChildBlock, handleOptionTextChange, handleToggleLoopEdge, handleEdgeLabelChange, handleEdgeUpdateGeneric]);
 
   return (
     <div style={styles.container}>
@@ -1197,22 +1250,60 @@ const MainFlow = () => {
         input::placeholder, textarea::placeholder { color: #94a3b8 !important; opacity: 1 !important; }
         .nodrag[placeholder]:empty:before { content: attr(placeholder); color: #94a3b8 !important; opacity: 1 !important; pointer-events: none; }
         input, textarea, .nodrag { color: #000000 !important; }
-        
         @keyframes fluidVignette {
           0% { opacity: 0; backdrop-filter: blur(0px); background-color: rgba(15,23,42,0); }
-          30% { opacity: 1; backdrop-filter: blur(3px); background-color: rgba(15,23,42,0.3); }
-          70% { opacity: 1; backdrop-filter: blur(3px); background-color: rgba(15,23,42,0.3); }
+          20% { opacity: 1; backdrop-filter: blur(3px); background-color: rgba(15,23,42,0.3); }
+          80% { opacity: 1; backdrop-filter: blur(3px); background-color: rgba(15,23,42,0.3); }
           100% { opacity: 0; backdrop-filter: blur(0px); background-color: rgba(15,23,42,0); }
         }
-        
         @keyframes pulseDot {
           0%, 100% { opacity: 0.2; transform: scale(0.8); }
           50% { opacity: 1; transform: scale(1.2); }
         }
+        @keyframes fsVignetteFlash {
+          0% { opacity: 0; box-shadow: inset 0 0 80px rgba(0,0,0,0.6); }
+          50% { opacity: 1; box-shadow: inset 0 0 120px rgba(0,0,0,0.85); }
+          100% { opacity: 0; box-shadow: inset 0 0 80px rgba(0,0,0,0); }
+        }
+        .fs-vignette-anim {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          pointer-events: none;
+          z-index: 9998;
+          animation: fsVignetteFlash 0.5s ease-out forwards;
+        }
+        .tester-bot-btn {
+          transition: box-shadow 0.2s ease;
+        }
+        .tester-bot-btn:hover {
+          box-shadow: 0 4px 14px rgba(9, 71, 118, 0.4);
+        }
       `}</style>
 
       {vignette && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 99999, pointerEvents: 'none', animation: 'fluidVignette 0.9s cubic-bezier(0.25, 1, 0.5, 1) forwards', backgroundColor: 'transparent' }} />
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'fluidVignette 5s forwards', pointerEvents: 'none' }}>
+          <p style={{ color: '#ffffff', fontSize: '24px', fontWeight: 'bold', fontFamily: '"Inter", sans-serif', textShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+            Initialisation de l'environnement créatif de <span style={{ color: '#38bdf8' }}>smsmode France</span>...
+          </p>
+        </div>
+      )}
+
+      {loading && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0f172a', zIndex: 999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '30px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
+            <div style={{ width: '12px', height: '12px', backgroundColor: '#38bdf8', borderRadius: '50%', animation: 'pulseDot 1.4s infinite ease-in-out' }} />
+            <div style={{ width: '12px', height: '12px', backgroundColor: '#38bdf8', borderRadius: '50%', animation: 'pulseDot 1.4s infinite ease-in-out 0.2s' }} />
+            <div style={{ width: '12px', height: '12px', backgroundColor: '#38bdf8', borderRadius: '50%', animation: 'pulseDot 1.4s infinite ease-in-out 0.4s' }} />
+          </div>
+          <p style={{ color: '#94a3b8', fontSize: '14px', fontWeight: '500' }}>Chargement du workflow interactif...</p>
+        </div>
+      )}
+
+      {fsVignetteKey > 0 && (
+        <div key={`fs-vignette-${fsVignetteKey}`} className="fs-vignette-anim" />
       )}
 
       <div style={styles.customWatermarkBackground} />
@@ -1225,54 +1316,17 @@ const MainFlow = () => {
         onNodeDragStop={onNodeDragStop}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        minZoom={0.005}
-        maxZoom={8}
         fitView
+        deleteKeyCode={null}
+        selectionKeyCode={null}
+        multiSelectionKeyCode={null}
       />
 
       {!fullScreen && (
         <div style={styles.overlayTL}>
-          <button style={styles.sendBtn} onClick={() => setShowSendModal(true)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
-            Envoyer
-          </button>
-        </div>
-      )}
-
-      {!fullScreen && (
-        <div style={styles.overlayBL}>
-          {nodes.length === 0 && (
-            <button 
-              style={{ 
-                width: '40px', 
-                height: '40px', 
-                borderRadius: '50%', 
-                backgroundColor: '#2563eb', 
-                color: '#fff', 
-                border: 'none', 
-                cursor: 'pointer', 
-                fontSize: '22px', 
-                fontWeight: '600', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                boxShadow: '0 4px 10px rgba(37, 99, 235, 0.25)',
-                marginBottom: '4px'
-              }} 
-              onClick={handleCreateMotherBlock}
-              title="Créer le bloc principal"
-            >
-              +
-            </button>
-          )}
-          <button style={styles.circularControlBtn} onClick={undo} disabled={history.index <= 0}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
-          </button>
-          <button style={styles.circularControlBtn} onClick={redo} disabled={history.index >= history.list.length - 1}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>
+          <button className="tester-bot-btn" style={styles.sendBtn} onClick={() => setShowSendModal(true)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Tester le Bot
           </button>
         </div>
       )}
@@ -1293,24 +1347,34 @@ const MainFlow = () => {
               <input 
                 type="text" 
                 value={username} 
-                onChange={(e) => setUsername(e.target.value)} 
-                onBlur={() => setIsEditingName(false)}
-                onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingName(false); }}
-                autoFocus
-                style={styles.usernameInput} 
+                onChange={(e) => { setUsername(e.target.value); localStorage.setItem('flow_username', e.target.value); }} 
+                onBlur={() => setIsEditingName(false)} 
+                onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingName(false); }} 
+                autoFocus 
+                style={{ ...styles.usernameInput, backgroundColor: '#fff', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '2px 4px' }} 
               />
             ) : (
-              <span style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', paddingBottom: '2px', userSelect: 'none' }}>{username}</span>
+              <span style={styles.usernameInput} onClick={() => setIsEditingName(true)}>{username}</span>
             )}
-            
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <button style={{ padding: '3px 8px', fontSize: '10px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }} onClick={() => logoInputRef.current?.click()}>
-                Modifier le logo
-              </button>
-              <button style={{ padding: '3px 8px', fontSize: '10px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }} onClick={() => setIsEditingName(true)}>
-                Modifier le nom
-              </button>
-            </div>
+            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '500' }}>smsmode France</span>
+          </div>
+        </div>
+      )}
+
+      {!fullScreen && (
+        <div style={styles.overlayBL}>
+          <button style={styles.controlBtn} onClick={handleCreateMotherBlock}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            Réinitialiser le Workflow
+          </button>
+          
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button style={styles.circularControlBtn} onClick={undo} disabled={history.index <= 0}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+            </button>
+            <button style={styles.circularControlBtn} onClick={redo} disabled={history.index >= history.list.length - 1}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>
+            </button>
           </div>
         </div>
       )}
@@ -1320,71 +1384,52 @@ const MainFlow = () => {
           <>
             <button style={styles.controlBtn} onClick={() => zoomIn()}>Zoom +</button>
             <button style={styles.controlBtn} onClick={() => zoomOut()}>Zoom -</button>
-            <button style={styles.controlBtn} onClick={() => fitView({ duration: 400 })}>Centrer la carte</button>
+            <button style={styles.controlBtn} onClick={() => fitView({ duration: 400 })}>Centrer</button>
           </>
         )}
-        <button 
-          style={{ 
-            ...styles.controlBtn, 
-            backgroundColor: fullScreen ? '#ef4444' : '#0f172a', 
-            color: '#ffffff' 
-          }} 
-          onClick={toggleFullScreen}
-        >
-          {fullScreen ? 'Quitter Plein écran' : 'Plein écran'}
+        <button style={styles.circularControlBtn} onClick={toggleFullScreen} title={fullScreen ? "Quitter Plein Écran" : "Plein Écran"}>
+          {fullScreen ? (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/></svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3M10 21v-6H4M14 3v6h6"/></svg>
+          )}
         </button>
       </div>
 
       {showSendModal && (
         <div style={styles.modalOverlay}>
           <div style={styles.modal}>
-            <h3 style={styles.modalTitle}>Êtes-vous sûr de vouloir envoyer ce code de message ?</h3>
-            <div style={styles.modalActions}>
-              <button style={{ ...styles.controlBtn, backgroundColor: '#2563eb', color: '#fff', border: 'none' }} onClick={() => { setShowSendModal(false); handleSaveAllDataOnSubmit(); }}>
-                Oui, envoyer
-              </button>
-              <button style={styles.controlBtn} onClick={() => setShowSendModal(false)}>
-                Non, annuler
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {sendingState !== 'idle' && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modal}>
-            {sendingState === 'sending' ? (
+            {sendingState === 'idle' && (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', position: 'relative', height: '70px', width: '260px', margin: '0 auto 20px auto' }}>
                   <div style={{ color: '#2563eb', display: 'inline-flex', alignItems: 'center' }}>
-                    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="22" y1="2" x2="11" y2="13"></line>
-                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                    </svg>
-                  </div>
-                  
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#64748b', animation: 'pulseDot 1.2s infinite 0s' }}></span>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#94a3b8', animation: 'pulseDot 1.2s infinite 0.3s' }}></span>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#cbd5e1', animation: 'pulseDot 1.2s infinite 0.6s' }}></span>
-                  </div>
-
-                  <div style={{ color: '#64748b', display: 'inline-flex', alignItems: 'center' }}>
-                    <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
-                      <line x1="12" y1="18" x2="12.01" y2="18"></line>
-                    </svg>
+                    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                   </div>
                 </div>
-                <h3 style={styles.modalTitle}>Envoi du message à votre client préféré...</h3>
+                <h3 style={styles.modalTitle}>Êtes-vous sûr de vouloir envoyer cette configuration de bot RCS à smsmode France ?</h3>
+                <div style={styles.modalActions}>
+                  <button style={{ ...styles.controlBtn, backgroundColor: '#094776', color: '#fff', border: 'none' }} onClick={handleSaveAndSend}>
+                    Oui, envoyer
+                  </button>
+                  <button style={styles.controlBtn} onClick={() => setShowSendModal(false)}>
+                    Annuler
+                  </button>
+                </div>
               </>
-            ) : (
+            )}
+
+            {sendingState === 'sending' && (
               <>
-                <div style={{ color: '#16a34a', marginBottom: '18px', display: 'flex', justifyContent: 'center' }}>
-                  <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                  </svg>
+                <div style={{ width: '40px', height: '40px', border: '3px solid #f3f3f3', borderTop: '3px solid #2563eb', borderRadius: '50%', animation: 'pulseDot 1s infinite linear', margin: '0 auto 20px auto' }} />
+                <h3 style={styles.modalTitle}>Envoi en cours des données à smsmode France...</h3>
+                <p style={{ fontSize: '13px', color: '#64748b', marginTop: '10px' }}>Veuillez patienter pendant la synchronisation sécurisée.</p>
+              </>
+            )}
+
+            {sendingState === 'success' && (
+              <>
+                <div style={{ width: '50px', height: '50px', backgroundColor: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
                 <h3 style={styles.modalTitle}>Votre message a été envoyé avec succès !</h3>
                 <button style={{ ...styles.controlBtn, backgroundColor: '#0f172a', color: '#fff', marginTop: '20px', border: 'none', width: '50%', boxSizing: 'border-box', display: 'inline-flex', justifyContent: 'center' }} onClick={() => setSendingState('idle')}>
@@ -1422,8 +1467,3 @@ export default function App() {
     </ReactFlowProvider>
   );
 }
-
-
-// En este codigo tengo problemas de visualizacion. Primero, la linea suplementaria, si selecciono un radius box, aparece bien una conexion hacia el bloque madre. Pero si lo deselecciono, quiero que aparezca deseleccionado el radius también (no solo desaparecer la linea suplementaria). 
-// Ademas, si selecciono un radius box y elimino esa opcion, la seleccion pasa al de arriba. No quiero eso. Si selecciono un radius box y elimino esa opcion, se elimina consigo la seleccion. Todo esta deseleccionado. No importa cuantas veces haya seleccionado o deseleccionado, si elimino la opcion seleccionada, desaparece la seleccion.
-// Si hay un bloque con una opcion seleccionada (y una linea suplementaria), al eliminar el bloque, me elimina tanto sus bloques hijos como su bloque madre. La opcion de Eliminar bloque, 

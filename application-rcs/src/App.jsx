@@ -403,7 +403,7 @@ const QuestionNode = ({ id, data }) => {
         <div style={styles.toolbar}>
           <button style={styles.toolbarBtn} onMouseDown={(e) => e.preventDefault()} onClick={() => fileInputRef.current?.click()}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-            + Média
+            Média
           </button>
           <input type="file" ref={fileInputRef} accept="image/png, image/jpeg, image/jpg, image/gif, image/webp" multiple style={{ display: 'none' }} onChange={handleMediaChange} />
           
@@ -413,7 +413,7 @@ const QuestionNode = ({ id, data }) => {
             onClick={() => setShowLinkPopup(!showLinkPopup)}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            + Hyperlien
+            Hyperlien
           </button>
           
           <button 
@@ -422,7 +422,7 @@ const QuestionNode = ({ id, data }) => {
             onClick={() => setShowStyleMenu(!showStyleMenu)}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-            Style ▲
+            Style
           </button>
           
           {showLinkPopup && (
@@ -551,22 +551,37 @@ const QuestionNode = ({ id, data }) => {
               }}
             />
             
-            {/* Casilla (Boolean) para Línea Suplementaria / Bucle */}
-            <input 
-              type="checkbox"
-              checked={!!data.loopOptions?.[idx]}
-              style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#10b981' }}
-              className="nodrag nowheel"
-              onChange={(e) => {
-                const updatedLoops = [...(data.loopOptions || [false, false, false, false])];
-                updatedLoops[idx] = e.target.checked;
-                data.onNodeChange(id, { ...data, loopOptions: updatedLoops }, false);
-                if (data.onToggleLoopEdge) {
-                  data.onToggleLoopEdge(id, idx, e.target.checked);
-                }
-              }}
-              title="Ligne supplémentaire (Boucle)"
-            />
+            {/* Solo muestra el radio box si NO es el bloque principal */}
+            {id !== 'node_root_primary' ? (
+              <input 
+                type="radio"
+                name={`loop_${id}`}
+                checked={!!data.loopOptions?.[idx]}
+                style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#6bb884' }}
+                className="nodrag nowheel"
+                onClick={(e) => {
+                  if (data.loopOptions?.[idx]) {
+                    e.preventDefault();
+                    const updatedLoops = [false, false, false, false];
+                    data.onNodeChange(id, { ...data, loopOptions: updatedLoops }, false);
+                    if (data.onToggleLoopEdge) {
+                      data.onToggleLoopEdge(id, -1);
+                    }
+                  }
+                }}
+                onChange={(e) => {
+                  const updatedLoops = [false, false, false, false];
+                  updatedLoops[idx] = true;
+                  data.onNodeChange(id, { ...data, loopOptions: updatedLoops }, false);
+                  if (data.onToggleLoopEdge) {
+                    data.onToggleLoopEdge(id, idx);
+                  }
+                }}
+                title="Ligne supplémentaire (Boucle)"
+              />
+            ) : (
+              <div style={{ width: '16px', height: '16px' }} />
+            )}
 
             <button style={styles.iconBtn} onClick={() => deleteOption(idx)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="19"/><line x1="6" y1="6" x2="18" y2="19"/></svg>
@@ -601,7 +616,6 @@ const EditableEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, mark
     }
   };
 
-  // Cálculo de Curva Bezier Cuadrática basada en Offsets Modificables con el Ratón
   const midX = (sourceX + targetX) / 2;
   const midY = (sourceY + targetY) / 2;
   const ctrlX = midX + (data?.controlOffsetX || 0);
@@ -609,14 +623,11 @@ const EditableEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, mark
   
   const edgePath = `M ${sourceX} ${sourceY} Q ${ctrlX} ${ctrlY} ${targetX} ${targetY}`;
   
-  // Punto Central exacto de la curva cuadrática (t = 0.5)
-  const computedMidX = 0.25 * sourceX + 0.5 * ctrlX + 0.25 * targetX;
-  const computedMidY = 0.25 * sourceY + 0.5 * ctrlY + 0.25 * targetY;
-  
-  const labelX = computedMidX + (data?.labelOffsetX || 0);
-  const labelY = computedMidY + (data?.labelOffsetY || 0);
+  // Posición T a lo largo de la curva Bezier (restringe movimiento exclusivamente a lo largo de la línea)
+  const t = data?.labelT !== undefined ? data.labelT : 0.5;
+  const labelX = Math.pow(1 - t, 2) * sourceX + 2 * (1 - t) * t * ctrlX + Math.pow(t, 2) * targetX;
+  const labelY = Math.pow(1 - t, 2) * sourceY + 2 * (1 - t) * t * ctrlY + Math.pow(t, 2) * targetY;
 
-  // Manejador del Arrastre de la Curva
   const handlePathMouseDown = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -646,14 +657,12 @@ const EditableEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, mark
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  // Manejador del Arrastre de la Caja de Texto (Label)
   const handleLabelMouseDown = (e) => {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
     const startY = e.clientY;
-    const initialLabelX = data?.labelOffsetX || 0;
-    const initialLabelY = data?.labelOffsetY || 0;
+    const initialT = data?.labelT !== undefined ? data.labelT : 0.5;
     let clickMoved = false;
 
     const handleMouseMove = (moveEvent) => {
@@ -662,11 +671,20 @@ const EditableEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, mark
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
         clickMoved = true;
       }
+      
+      const vX = targetX - sourceX;
+      const vY = targetY - sourceY;
+      const len = Math.hypot(vX, vY) || 1;
+      const dot = (dx * vX + dy * vY) / len;
+      const dt = dot / len;
+      
+      let newT = initialT + dt;
+      newT = Math.max(0.1, Math.min(0.9, newT));
+      
       if (data?.onEdgeDataChange) {
         data.onEdgeDataChange(id, {
           ...data,
-          labelOffsetX: initialLabelX + dx,
-          labelOffsetY: initialLabelY + dy
+          labelT: newT
         });
       }
     };
@@ -685,7 +703,6 @@ const EditableEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, mark
 
   return (
     <>
-      {/* Guía Invisible Más Ancha para Capturar el Clic y Arrastre del Ratón */}
       <path 
         d={edgePath} 
         fill="none" 
@@ -726,7 +743,7 @@ const EditableEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, mark
           ) : (
             <div 
               onMouseDown={handleLabelMouseDown}
-              style={{ backgroundColor: '#ffffff', padding: '5px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: '500', color: '#475569', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', maxWidth: '100%', userSelect: 'none', cursor: 'move' }}
+              style={{ backgroundColor: '#ffffff', padding: '5px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: '500', color: '#475569', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', maxWidth: '100%', userSelect: 'none', cursor: 'ew-resize' }}
             >
               {textValue}
             </div>
@@ -761,6 +778,7 @@ const MainFlow = () => {
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   const logoInputRef = useRef(null);
+  const rebindFunctionsRef = useRef({});
 
   useEffect(() => {
     const timer = setTimeout(() => setLoading(false), 4000);
@@ -813,33 +831,49 @@ const MainFlow = () => {
     };
   }, [handleEdgeLabelChange, handleEdgeUpdateGeneric]);
 
-  const undo = () => {
+  rebindFunctionsRef.current.rebindEdgeCallbacks = rebindEdgeCallbacks;
+
+  const undo = useCallback(() => {
     setHistory(prev => {
       if (prev.index > 0) {
         const nextIndex = prev.index - 1;
         const prevStep = prev.list[nextIndex];
-        setNodes(prevStep.nodes.map(n => rebindNodeCallbacks(n)));
-        setEdges(prevStep.edges.map(e => rebindEdgeCallbacks(e)));
+        setNodes(prevStep.nodes.map(n => rebindFunctionsRef.current.rebindNodeCallbacks(n)));
+        setEdges(prevStep.edges.map(e => rebindFunctionsRef.current.rebindEdgeCallbacks(e)));
         return { ...prev, index: nextIndex };
       }
       return prev;
     });
-  };
+  }, []);
 
-  const redo = () => {
+  const redo = useCallback(() => {
     setHistory(prev => {
       if (prev.index < prev.list.length - 1) {
         const nextIndex = prev.index + 1;
         const nextStep = prev.list[nextIndex];
-        setNodes(nextStep.nodes.map(n => rebindNodeCallbacks(n)));
-        setEdges(nextStep.edges.map(e => rebindEdgeCallbacks(e)));
+        setNodes(nextStep.nodes.map(n => rebindFunctionsRef.current.rebindNodeCallbacks(n)));
+        setEdges(nextStep.edges.map(e => rebindFunctionsRef.current.rebindEdgeCallbacks(e)));
         return { ...prev, index: nextIndex };
       }
       return prev;
     });
-  };
+  }, []);
 
-  // Sincronización Automática de Inputs con Etiquetas de Conexiones en Orden (1-4)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        redo();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo]);
+
   const handleOptionTextChange = useCallback((nodeId, optionIndex, newText) => {
     setEdges(prev => prev.map(edge => {
       if (edge.source === nodeId && edge.data?.optionIndex === optionIndex && !edge.data?.isManuallyEdited) {
@@ -852,51 +886,50 @@ const MainFlow = () => {
     }));
   }, []);
 
-  // Creación / Eliminación Dinámica de la Línea Suplementaria Punteada Animada
-  const handleToggleLoopEdge = useCallback((nodeId, optionIndex, isChecked) => {
-    const loopEdgeId = `loop_${nodeId}_${optionIndex}`;
-    if (isChecked) {
-      const parentEdge = edgesRef.current.find(e => e.target === nodeId);
-      if (!parentEdge) return;
-      const parentId = parentEdge.source;
+  const handleToggleLoopEdge = useCallback((nodeId, optionIndex) => {
+    let nextEdges = edgesRef.current.filter(e => !(e.source === nodeId && e.data?.isLoop));
 
-      const currentNode = nodesRef.current.find(n => n.id === nodeId);
-      const optionText = currentNode?.data?.options?.[optionIndex] || `Boucle ${optionIndex + 1}`;
+    if (optionIndex !== -1) {
+      const parentEdge = nextEdges.find(e => e.target === nodeId);
+      if (parentEdge) {
+        const parentId = parentEdge.source;
+        const currentNode = nodesRef.current.find(n => n.id === nodeId);
+        const optionText = currentNode?.data?.options?.[optionIndex] || `Boucle ${optionIndex + 1}`;
 
-      const newLoopEdge = {
-        id: loopEdgeId,
-        source: nodeId,
-        target: parentId,
-        type: 'editableEdge',
-        animated: true,
-        style: { strokeDasharray: '6,6', stroke: '#10b981', strokeWidth: 2 },
-        data: {
-          label: optionText,
-          optionIndex,
-          isLoop: true,
-          isManuallyEdited: false,
-          onEdgeLabelChange: handleEdgeLabelChange,
-          onEdgeDataChange: handleEdgeUpdateGeneric
-        }
-      };
-      const nextEdges = [...edgesRef.current, newLoopEdge];
-      setEdges(nextEdges);
-      takeSnapshot(nodesRef.current, nextEdges);
-    } else {
-      const nextEdges = edgesRef.current.filter(e => e.id !== loopEdgeId);
-      setEdges(nextEdges);
-      takeSnapshot(nodesRef.current, nextEdges);
+        const newLoopEdge = {
+          id: `loop_${nodeId}_${optionIndex}`,
+          source: nodeId,
+          target: parentId,
+          type: 'editableEdge',
+          animated: true,
+          style: { strokeDasharray: '6,6', stroke: '#6bb884', strokeWidth: 2 },
+          data: {
+            label: optionText,
+            optionIndex,
+            isLoop: true,
+            isManuallyEdited: false,
+            onEdgeLabelChange: handleEdgeLabelChange,
+            onEdgeDataChange: handleEdgeUpdateGeneric
+          }
+        };
+        nextEdges.push(newLoopEdge);
+      }
     }
+    
+    setEdges(nextEdges);
+    takeSnapshot(nodesRef.current, nextEdges);
   }, [handleEdgeLabelChange, handleEdgeUpdateGeneric, takeSnapshot]);
 
-  const rebindNodeCallbacks = (node) => {
+  const rebindNodeCallbacks = useCallback((node) => {
     node.data.onNodeChange = handleNodeDataChange;
     node.data.onAddChild = handleAddChildBlock;
     node.data.onTriggerDelete = triggerDeleteModal;
     node.data.onOptionTextChange = handleOptionTextChange;
     node.data.onToggleLoopEdge = handleToggleLoopEdge;
     return node;
-  };
+  }, []);
+
+  rebindFunctionsRef.current.rebindNodeCallbacks = rebindNodeCallbacks;
 
   const handleNodeDataChange = useCallback((id, updatedData, triggerHistory = false) => {
     setNodes(prev => {
@@ -989,30 +1022,7 @@ const MainFlow = () => {
 
   const onNodeDragStop = useCallback((event, draggedNode) => {
     setNodes(currentNodes => {
-      let currentY = draggedNode.position.y;
-      const bufferX = 480;
-      const bufferY = 320;
-      let collisionDetected = true;
-      let loopSafety = 0;
-
-      while (collisionDetected && loopSafety < 30) {
-        loopSafety++;
-        collisionDetected = false;
-        for (const node of currentNodes) {
-          if (node.id === draggedNode.id) continue;
-          const dx = Math.abs(node.position.x - draggedNode.position.x);
-          const dy = Math.abs(node.position.y - currentY);
-          if (dx < bufferX && dy < bufferY) {
-            const signY = currentY >= node.position.y ? 1 : -1;
-            currentY = node.position.y + (signY * 340);
-            collisionDetected = true;
-            break;
-          }
-        }
-      }
-
-      const adjustedDraggedNode = { ...draggedNode, position: { x: draggedNode.position.x, y: currentY } };
-      const nextNodes = currentNodes.map(node => node.id === draggedNode.id ? adjustedDraggedNode : node );
+      const nextNodes = currentNodes.map(node => node.id === draggedNode.id ? draggedNode : node );
       setTimeout(() => takeSnapshot(nextNodes, edgesRef.current), 10);
       return nextNodes;
     });
@@ -1157,15 +1167,19 @@ const MainFlow = () => {
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99999, color: '#fff' }}>
         <style>{`
-          @keyframes pulseNode {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(37, 99, 235, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+          @keyframes floatNode {
+            0%, 100% { transform: translateY(0) scale(1); box-shadow: 0 10px 25px rgba(37, 99, 235, 0.4); }
+            50% { transform: translateY(-15px) scale(1.05); box-shadow: 0 25px 40px rgba(37, 99, 235, 0.6); }
+          }
+          @keyframes glowRotate {
+             0% { border-color: #2563eb; }
+             50% { border-color: #6bb884; }
+             100% { border-color: #2563eb; }
           }
         `}</style>
-        <div style={{ width: '110px', height: '110px', borderRadius: '50%', backgroundColor: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'pulseNode 2s infinite', marginBottom: '28px', border: '3px solid #2563eb' }}>
-          <svg width="65" height="65" viewBox="0 0 24 24" fill="#2563eb" style={{ display: 'block' }}>
-            <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/>
+        <div style={{ width: '110px', height: '110px', borderRadius: '50%', backgroundColor: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'floatNode 3s ease-in-out infinite, glowRotate 3s linear infinite', marginBottom: '28px', border: '3px solid #2563eb' }}>
+          <svg width="55" height="55" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
           </svg>
         </div>
         <p style={{ fontSize: '15px', fontWeight: '500', textAlign: 'center', maxWidth: '80%', lineHeight: '1.7', color: '#94a3b8', fontFamily: '"Inter", sans-serif' }}>
@@ -1216,7 +1230,6 @@ const MainFlow = () => {
         fitView
       />
 
-      {/* Ventanita Superior Izquierda: Botón Envoyer Modificado a Color Azul */}
       {!fullScreen && (
         <div style={styles.overlayTL}>
           <button style={styles.sendBtn} onClick={() => setShowSendModal(true)}>
@@ -1229,7 +1242,6 @@ const MainFlow = () => {
         </div>
       )}
 
-      {/* Controles Inferior Izquierda */}
       {!fullScreen && (
         <div style={styles.overlayBL}>
           {nodes.length === 0 && (
@@ -1265,7 +1277,6 @@ const MainFlow = () => {
         </div>
       )}
 
-      {/* Ventanita Superior Derecha */}
       {!fullScreen && (
         <div style={styles.overlayTR}>
           <div style={{ ...styles.logoCircle, cursor: 'pointer' }} onClick={() => logoInputRef.current?.click()}>
@@ -1304,7 +1315,6 @@ const MainFlow = () => {
         </div>
       )}
 
-      {/* Controles Inferior Derecha: Botón de Salir de Pantalla Completa Configurado en Rojo */}
       <div style={styles.overlayBR}>
         {!fullScreen && (
           <>
@@ -1325,7 +1335,6 @@ const MainFlow = () => {
         </button>
       </div>
 
-      {/* Ventana de Confirmación de Envoyer */}
       {showSendModal && (
         <div style={styles.modalOverlay}>
           <div style={styles.modal}>
@@ -1342,7 +1351,6 @@ const MainFlow = () => {
         </div>
       )}
 
-      {/* Ventana de Animación de Envío Recibido */}
       {sendingState !== 'idle' && (
         <div style={styles.modalOverlay}>
           <div style={styles.modal}>
@@ -1388,7 +1396,6 @@ const MainFlow = () => {
         </div>
       )}
 
-      {/* Ventana de Confirmación de Eliminación */}
       {deleteModal.show && (
         <div style={styles.modalOverlay}>
           <div style={styles.modal}>
@@ -1417,7 +1424,6 @@ export default function App() {
 }
 
 
-
-//Tengo este codigo. Tengo varios problemas. 
-// Primero, el texto que hay en las lineas, lo podemos mover libremente en el canva. Pero yo solo quiero que se pueda mover a lo largo de la linea que le corresponde (poner un punto fijo y solo poder mover a lo largo de la linea).
-// 
+// En este codigo tengo problemas de visualizacion. Primero, la linea suplementaria, si selecciono un radius box, aparece bien una conexion hacia el bloque madre. Pero si lo deselecciono, quiero que aparezca deseleccionado el radius también (no solo desaparecer la linea suplementaria). 
+// Ademas, si selecciono un radius box y elimino esa opcion, la seleccion pasa al de arriba. No quiero eso. Si selecciono un radius box y elimino esa opcion, se elimina consigo la seleccion. Todo esta deseleccionado. No importa cuantas veces haya seleccionado o deseleccionado, si elimino la opcion seleccionada, desaparece la seleccion.
+// Si hay un bloque con una opcion seleccionada (y una linea suplementaria), al eliminar el bloque, me elimina tanto sus bloques hijos como su bloque madre. La opcion de Eliminar bloque, 

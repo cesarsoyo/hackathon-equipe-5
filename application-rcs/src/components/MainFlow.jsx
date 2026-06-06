@@ -9,8 +9,11 @@ import '@xyflow/react/dist/style.css';
 
 import QuestionNode from './CustomNode';
 import EditableEdge from './CustomEdge';
+import SavedWorkflowsPanel from './SavedWorkflowsPanel';
 import { styles } from '../styles/flowStyles';
-import { convertToBackendPayload } from './workflow-workspace/_utils/functions/workflow-converter';
+import { convertToBackendPayload, convertFromBackendPayload } from './workflow-workspace/_utils/functions/workflow-converter';
+
+const API_BASE = 'https://smsmode-hack-team-5.ngrok.dev/Rcs-Workflow-Backend-API';
 
 const nodeTypes = { questionNode: QuestionNode };
 const edgeTypes = { editableEdge: EditableEdge };
@@ -56,6 +59,14 @@ const MainFlow = () => {
   const [username, setUsername] = useState(() => localStorage.getItem('flow_username') || 'Thomas Froger');
   const [isEditingName, setIsEditingName] = useState(false);
   const [userLogo, setUserLogo] = useState(() => localStorage.getItem('flow_userlogo') || null);
+
+  const [showWorkflowsPanel, setShowWorkflowsPanel] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveNameInput, setSaveNameInput] = useState('');
+  const [savingWorkflow, setSavingWorkflow] = useState(false);
+  const [currentWorkflowId, setCurrentWorkflowId] = useState(null);
+  const [savedWorkflows, setSavedWorkflows] = useState([]);
+  const [workflowName, setWorkflowName] = useState('');
 
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -296,6 +307,73 @@ const MainFlow = () => {
 
   rebindFunctionsRef.current.rebindNodeCallbacks = rebindNodeCallbacks;
 
+  const fetchSavedWorkflows = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/work-flow`);
+      if (res.ok) setSavedWorkflows(await res.json());
+    } catch (e) {
+      console.error('Failed to fetch workflows:', e);
+    }
+  }, []);
+
+  const handleOpenWorkflowsPanel = useCallback(() => {
+    fetchSavedWorkflows();
+    setShowWorkflowsPanel(true);
+  }, [fetchSavedWorkflows]);
+
+  const handleSaveWorkflow = useCallback(async () => {
+    const name = saveNameInput.trim();
+    if (!name) return;
+    setSavingWorkflow(true);
+    try {
+      const workflowPayload = convertToBackendPayload(nodesRef.current, edgesRef.current, name);
+      const reactFlowData = {
+        nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+        edges: JSON.parse(JSON.stringify(edgesRef.current)),
+      };
+      const res = await fetch(`${API_BASE}/work-flow`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...workflowPayload, reactFlowData }),
+      });
+      if (res.ok) {
+        const saved = await res.json();
+        setCurrentWorkflowId(saved.id);
+        setWorkflowName(name);
+        await fetchSavedWorkflows();
+        setShowSaveModal(false);
+        setSaveNameInput('');
+      } else {
+        alert('Erreur lors de la sauvegarde.');
+      }
+    } catch (e) {
+      console.error('Save workflow error:', e);
+      alert('Erreur réseau lors de la sauvegarde.');
+    } finally {
+      setSavingWorkflow(false);
+    }
+  }, [saveNameInput, fetchSavedWorkflows]);
+
+  const handleLoadWorkflow = useCallback((workflow) => {
+    // Prefer exact React Flow graph if saved; otherwise reconstruct from backend node map
+    const graphData = workflow.reactFlowData
+      ? workflow.reactFlowData
+      : convertFromBackendPayload(workflow.nodes, workflow.entryNodeId);
+
+    const loadedNodes = graphData.nodes.map(n => rebindNodeCallbacks(n));
+    const loadedEdges = graphData.edges.map(e => rebindEdgeCallbacks(e));
+    setNodes(loadedNodes);
+    setEdges(loadedEdges);
+    setHistory({
+      list: [{ nodes: JSON.parse(JSON.stringify(loadedNodes)), edges: JSON.parse(JSON.stringify(loadedEdges)) }],
+      index: 0,
+    });
+    setCurrentWorkflowId(workflow.id);
+    setWorkflowName(workflow.name);
+    setShowWorkflowsPanel(false);
+    setTimeout(() => fitView({ duration: 400 }), 100);
+  }, [rebindNodeCallbacks, rebindEdgeCallbacks, setNodes, setEdges, fitView]);
+
   const handleCreateMotherBlock = () => {
     const rootId = 'node_root_primary';
     const newMotherNode = {
@@ -416,7 +494,7 @@ const MainFlow = () => {
     }
 
     // Parse the graph safely from live hooks
-    const workflowPayload = convertToBackendPayload(nodesRef.current, edgesRef.current, 'Hack-5');
+    const workflowPayload = convertToBackendPayload(nodesRef.current, edgesRef.current, workflowName || 'Mon Workflow');
 
     const payload = {
       phoneNumber: formattedPhoneNumber,
@@ -424,7 +502,7 @@ const MainFlow = () => {
     };
 
     try {
-      const response = await fetch("https://smsmode-hack-team-5.ngrok.dev/Rcs-Workflow-Backend-API/work-flow/test-send", {
+      const response = await fetch(`${API_BASE}/work-flow/test-send`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -671,11 +749,17 @@ const MainFlow = () => {
 
       {!fullScreen && (
         <div style={styles.overlayBL}>
-          <button style={styles.controlBtn} onClick={handleCreateMotherBlock}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
-            Réinitialiser le Workflow
-          </button>
-          
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button style={styles.controlBtn} onClick={handleCreateMotherBlock}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+              Réinitialiser
+            </button>
+            <button style={styles.controlBtn} onClick={() => { setSaveNameInput(workflowName); setShowSaveModal(true); }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              Sauvegarder
+            </button>
+          </div>
+
           <div style={{ display: 'flex', gap: '8px' }}>
             <button style={styles.circularControlBtn} onClick={undo} disabled={history.index <= 0}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
@@ -685,6 +769,15 @@ const MainFlow = () => {
             </button>
             <button style={styles.circularControlBtn} onClick={() => setShowSupportModal(true)} title="Contacter le support technique">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/><path d="M21 15v4a2 2 0 0 1-2 2h-4"/></svg>
+            </button>
+            <button
+              style={{ ...styles.circularControlBtn, ...(showWorkflowsPanel ? { backgroundColor: '#0c2340', borderColor: '#3b82f6', color: '#3b82f6' } : {}) }}
+              onClick={() => showWorkflowsPanel ? setShowWorkflowsPanel(false) : handleOpenWorkflowsPanel()}
+              title="Mes Workflows"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
             </button>
           </div>
         </div>
@@ -752,6 +845,26 @@ const MainFlow = () => {
                 </div>
                 <h3 style={styles.modalTitle}>Êtes-vous sûr de vouloir envoyer le SMS avec cette configuration RCS ?</h3>
                 <div style={{ marginTop: '16px', textAlign: 'left' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>
+                    Nom du workflow
+                  </label>
+                  <input
+                    type="text"
+                    value={workflowName}
+                    placeholder="Ex: Onboarding client, Support FAQ..."
+                    onChange={e => setWorkflowName(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '10px',
+                      fontSize: '14px',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      color: '#0f172a',
+                      marginBottom: '14px',
+                    }}
+                  />
                   <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>
                     Numéro de téléphone destinataire
                   </label>
@@ -872,6 +985,67 @@ const MainFlow = () => {
           </div>
         </div>
        )}
+
+      {showWorkflowsPanel && (
+        <SavedWorkflowsPanel
+          workflows={savedWorkflows}
+          currentWorkflowId={currentWorkflowId}
+          onLoad={handleLoadWorkflow}
+          onClose={() => setShowWorkflowsPanel(false)}
+        />
+      )}
+
+      {showSaveModal && (
+        <div style={styles.modalOverlay}>
+          <div style={{ ...styles.modal, minWidth: '320px' }} className="fluid-modal">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <div style={{ color: '#094776' }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                  <polyline points="17 21 17 13 7 13 7 21"/>
+                  <polyline points="7 3 7 8 15 8"/>
+                </svg>
+              </div>
+              <h3 style={{ ...styles.modalTitle, margin: 0 }}>Sauvegarder le Workflow</h3>
+            </div>
+            <div style={{ textAlign: 'left', marginBottom: '20px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '6px' }}>
+                Nom du workflow
+              </label>
+              <input
+                type="text"
+                value={saveNameInput}
+                placeholder="Ex: Onboarding client, Support FAQ..."
+                autoFocus
+                onChange={e => setSaveNameInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && saveNameInput.trim()) handleSaveWorkflow(); }}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '10px',
+                  fontSize: '14px',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  color: '#0f172a',
+                }}
+              />
+            </div>
+            <div style={styles.modalActions}>
+              <button
+                style={{ ...styles.controlBtn, backgroundColor: savingWorkflow ? '#475569' : '#094776', color: '#fff', border: 'none', opacity: (!saveNameInput.trim() || savingWorkflow) ? 0.6 : 1 }}
+                disabled={!saveNameInput.trim() || savingWorkflow}
+                onClick={handleSaveWorkflow}
+              >
+                {savingWorkflow ? 'Sauvegarde...' : 'Sauvegarder'}
+              </button>
+              <button style={styles.controlBtn} onClick={() => setShowSaveModal(false)}>
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
